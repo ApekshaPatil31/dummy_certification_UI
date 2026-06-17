@@ -34,6 +34,11 @@ def show_certification_review(current_user: str):
     )
 
     pending = data.get_pending_objects()
+    counts = data.get_home_counts()
+    s1, s2, s3 = st.columns(3)
+    s1.metric("✅ Certified by humans", counts["certified_by_humans"])
+    s2.metric("🟡 Pending for HITL", counts["pending_hitl"])
+    s3.metric("📦 Total Gold objects", counts["total_gold_objects"])
 
     # ---- 3.1 Controls row — the "global search bar" -----------------------
     c1, c2 = st.columns([3, 2])
