@@ -18,6 +18,15 @@ def show_asset_detail():
     st.title("📊 Asset Detail")
     st.caption("Per-object certification status and full ledger history (Gold layer).")
 
+    # ---- Portfolio summary counts ----------------------------------------
+    counts = data.get_home_counts()
+    s1, s2, s3 = st.columns(3)
+    s1.metric("✅ Certified by humans", counts["certified_by_humans"])
+    s2.metric("🟡 Pending for HITL", counts["pending_hitl"])
+    s3.metric("📦 Total Gold objects", counts["total_gold_objects"])
+
+    st.divider()
+
     objects = data.get_all_objects()
     if not objects:
         st.info("No Gold objects have been evaluated yet.")
