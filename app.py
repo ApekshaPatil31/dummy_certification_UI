@@ -1,15 +1,6 @@
-from databricks import sql
-from databricks.sdk.core import Config
+
 import streamlit as st
-import os
 
-cfg = Config()
-
-conn = sql.connect(
-    server_hostname=cfg.host,
-    http_path=os.getenv("http_path"),
-    credentials_provider=lambda: cfg.authenticate,
-)
 
 
 # ------------------- Page Configuration -------------------
