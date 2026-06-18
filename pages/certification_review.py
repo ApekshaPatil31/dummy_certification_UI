@@ -9,10 +9,20 @@ for queries.py later leaves this code largely intact.
 """
 
 import json
+from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 
 import mock_data as data
+
+# Recent-range options for the time filter (replaces the calendar picker).
+# label -> lookback window; None = no time bound ("All").
+_TIME_RANGES = {
+    "All": None,
+    "Last 7 Days": timedelta(days=7),
+    "Past Month": timedelta(days=30),
+    "Last 90 Days": timedelta(days=90),
+}
 
 
 def _verdict_pill(state: str):
@@ -32,19 +42,36 @@ def show_certification_review(current_user: str):
         "Human-in-the-loop review of the **Gold** layer. The engine proposes a "
         "verdict; you certify or reject it."
     )
-
-    pending = data.get_pending_objects()
     counts = data.get_home_counts()
     s1, s2, s3 = st.columns(3)
     s1.metric("✅ Certified", counts["certified_by_humans"])
-    s2.metric("🟡 Pending ", counts["pending_hitl"])
-    s3.metric("📦 Total ", counts["total_gold_objects"])
-
+    s2.metric("🟡 Pending", counts["pending_hitl"])
+    s3.metric("📦 Total objects", counts["total_gold_objects"])
     # ---- 3.1 Controls row — the "global search bar" -----------------------
-    c1, c2 = st.columns([3, 2])
+    # Three filters side by side. Layer + time are read first because the object
+    # dropdown's options depend on them.
+    c1, c2, c3 = st.columns([3, 1.2, 1.4])
+
+    with c2:
+        layer = st.selectbox(
+            "Layer",
+            ["All"] + data.get_layers(),
+            key="review_layer_filter",
+        )
+    with c3:
+        time_label = st.selectbox(
+            "Recommended within",
+            list(_TIME_RANGES),
+            key="review_time_filter",
+        )
+
+    window = _TIME_RANGES[time_label]
+    since = datetime.now(timezone.utc) - window if window else None
+    pending = data.get_pending_objects(layer=layer, since=since)
+
     with c1:
         if not pending:
-            st.success("🎉 No Gold objects are pending review right now.")
+            st.success("🎉 No Gold objects match these filters.")
             return
         options = [r["object"] for r in pending]
         selected = st.selectbox(
@@ -53,9 +80,6 @@ def show_certification_review(current_user: str):
             format_func=lambda o: o.split(".")[-1],
             key="review_selected_object",
         )
-    with c2:
-        # Time filter is wireframed but not wired to filtering in the POC.
-        st.date_input("Recommended between", value=[], key="review_time_filter")
 
     row = next(r for r in pending if r["object"] == selected)
     rationale = json.loads(row["rationale"])
@@ -72,8 +96,9 @@ def show_certification_review(current_user: str):
         st.caption(f"`{selected}`")
         _verdict_pill(row["state"])
 
-        # 3.2.1 Stale-version banner (display-only comparison).
-        live_version = reviewed_version  # POC: no live DESCRIBE HISTORY; treat as equal
+        # 3.2.1 Stale-version banner (display-only comparison). live_version is a
+        # read-only DESCRIBE HISTORY stand-in — it never changes what gets certified.
+        live_version = data.get_live_version(selected, reviewed_version)
         if reviewed_version is None:
             st.info("ℹ️ Version not tracked for this object — "
                     "certifying will leave `last_certified_version` empty.")
@@ -88,7 +113,9 @@ def show_certification_review(current_user: str):
         st.markdown("**Why the engine proposed this verdict**")
         st.info(data.summarize_rationale(row["rationale"]))
 
-        # Structured rationale facts.
+        # Structured rationale facts. Failed-row counts are excluded as a raw
+        # column and folded into the descriptive Disposition instead (e.g.
+        # "11 rows quarantined" / "Escalated for review").
         with st.expander("📋 Check-by-check evidence", expanded=True):
             checks_view = [
                 {
@@ -96,8 +123,7 @@ def show_certification_review(current_user: str):
                     "type": c["rule_type"],
                     "criticality": c.get("criticality", ""),
                     "verdict": c["verdict"],
-                    "failed_rows": c.get("failed_rows", ""),
-                    "disposition": c.get("disposition", ""),
+                    "disposition": data.disposition_text(c),
                 }
                 for c in rationale.get("checks", [])
             ]
@@ -113,7 +139,7 @@ def show_certification_review(current_user: str):
         st.metric("Checks passed", f"{summ.get('passed', 0)} / {summ.get('total', 0)}")
         rem = rationale.get("row_level", {}).get("remediation", {})
         st.metric("Rows quarantined", rem.get("quarantined_rows", 0))
-        st.metric("Recommended", data.relative_time(row["decided_at"]))
+        st.metric("Engine Certification time", data.relative_time(row["decided_at"]))
         st.caption(f"run_id: `{row['run_id']}`")
 
     st.divider()
@@ -126,7 +152,8 @@ def show_certification_review(current_user: str):
         placeholder="e.g. Verified against finance close; safe to certify.",
     )
 
-    b1, b2, _ = st.columns([1, 1, 4])
+    # Centered decision buttons.
+    _pad_l, b1, b2, _pad_r = st.columns([3, 1.4, 1.4, 3])
     with b1:
         certify = st.button("✅ Certify", type="primary", use_container_width=True)
     with b2:
