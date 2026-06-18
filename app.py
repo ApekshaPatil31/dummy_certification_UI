@@ -17,7 +17,8 @@ mock_data.* calls for queries.* — the page code stays the same.
 import streamlit as st
 
 from pages.certification_review import show_certification_review
-from pages.asset_detail import show_asset_detail
+# Asset Detail page is parked for now — wiring removed from the router below.
+# from pages.asset_detail import show_asset_detail
 
 # ------------------- Page Configuration -------------------
 st.set_page_config(
@@ -69,7 +70,7 @@ def main():
         "Go to:",
         [
             "Certification Review",
-            "Asset Detail",
+            # "Asset Detail",  # parked for now
         ],
         label_visibility="visible",
     )
@@ -83,8 +84,8 @@ def main():
     # Route to the selected page.
     if page == "Certification Review":
         show_certification_review(current_user=CURRENT_USER)
-    elif page == "Asset Detail":
-        show_asset_detail()
+    # elif page == "Asset Detail":
+    #     show_asset_detail()
 
 
 if __name__ == "__main__":
