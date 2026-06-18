@@ -55,7 +55,7 @@ def show_certification_review(current_user: str):
     with c2:
         layer = st.selectbox(
             "Layer",
-            ["All"] + data.get_layers(),
+            data.get_layers(),
             key="review_layer_filter",
         )
     with c3:
