@@ -253,10 +253,26 @@ _PROPOSED = ("proposed_certified", "proposed_rejected")
 # Read API — mirrors the eventual queries.py surface.
 # --------------------------------------------------------------------------- #
 
-def get_pending_objects() -> list[dict]:
-    """Gold objects whose latest decision is still an engine recommendation."""
+def get_pending_objects(layer: str | None = None,
+                        since: "datetime | None" = None) -> list[dict]:
+    """
+    Gold objects whose latest decision is still an engine recommendation.
+
+    Optional filters mirror the page controls:
+      layer  — keep only this layer (None / 'All' = no filter).
+      since  — keep only rows recommended at/after this timestamp (None = all time).
+    """
     rows = [r for r in _latest_per_object().values() if r["state"] in _PROPOSED]
+    if layer and layer != "All":
+        rows = [r for r in rows if r["layer"] == layer]
+    if since is not None:
+        rows = [r for r in rows if r["decided_at"] >= since]
     return sorted(rows, key=lambda r: r["decided_at"], reverse=True)
+
+
+def get_layers() -> list[str]:
+    """Distinct layers present in the ledger (for the layer filter)."""
+    return sorted({r["layer"] for r in _ledger()})
 
 
 def get_all_objects() -> list[str]:
@@ -373,6 +389,49 @@ def record_human_decision(*, proposed_row: dict, decision: str, decided_by: str,
     }
     _ledger().append(new_row)
     return new_row
+
+
+# --------------------------------------------------------------------------- #
+# Live Delta versions — stand-in for `DESCRIBE HISTORY <object>` (app.md §3.2.1).
+# Used ONLY to drive the stale-version banner; never to decide the certified
+# version. Some objects are deliberately ahead of their reviewed version so the
+# wireframe shows the warning. Anything not listed is assumed up to date.
+# --------------------------------------------------------------------------- #
+
+_LIVE_VERSIONS: dict[str, int] = {
+    # reviewed v7 → table has since advanced to v9 (STALE — banner fires)
+    "almr_dev_marts.customer_inventory.gold_customer_inventory_health": 9,
+    # reviewed v14 → still v14 (fresh, no banner)
+    "almr_dev_marts.sales.gold_sales_summary": 14,
+    # reviewed v22 → still v22 (fresh, no banner)
+    "almr_dev_marts.orders.gold_order_fulfillment": 22,
+}
+
+
+def get_live_version(object_name: str, reviewed_version: int | None = None) -> int | None:
+    """Current Delta version of the object (POC stand-in for DESCRIBE HISTORY)."""
+    return _LIVE_VERSIONS.get(object_name, reviewed_version)
+
+
+def disposition_text(check: dict) -> str:
+    """
+    Human-readable disposition for one check (app.md §3 / ledger §8), e.g.
+      row_level failure   → "11 rows quarantined"
+      asset_level failure → "Escalated for review"
+    Passing/errored checks get a short status instead of a raw count.
+    """
+    verdict = (check.get("verdict") or "").upper()
+    rule_type = check.get("rule_type", "")
+    if verdict == "PASS":
+        return "—"
+    if verdict == "ERROR":
+        return "Errored — needs re-run"
+    if rule_type == "asset_level":
+        return "Escalated for review"
+    if rule_type == "row_level":
+        n = check.get("failed_rows")
+        return f"{n} rows quarantined" if n else "Quarantined"
+    return "Reported only"
 
 
 # --------------------------------------------------------------------------- #
